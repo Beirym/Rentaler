@@ -1,7 +1,6 @@
 from .logs import addLog
 from .tg_api.queries import telegram_api_request
 
-import asyncio
 import traceback
 import functools
 from textwrap import dedent
@@ -23,7 +22,7 @@ def exceptions_catcher(func):
             user_id = None
 
         try:
-            result = await func(*args, *kwargs)
+            result = await func(*args, **kwargs)
         except Exception as e:
             await addLog(
                 level='error', 
@@ -51,3 +50,12 @@ def exceptions_catcher(func):
                     },
                 )
     return wrapper
+
+
+class NotFound(Exception):
+    '''Raised when an unknown function is being requested.'''
+    pass
+
+class AccessDenied(Exception):
+    '''Raised when when a function that is not available to the user is requested.'''
+    pass

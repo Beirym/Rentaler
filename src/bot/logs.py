@@ -2,7 +2,6 @@ from .tg_api.queries import telegram_api_request
 from .config import CHAT_WITH_LOGS_ID
 
 import os
-import asyncio
 import datetime
 import logging
 from textwrap import dedent
@@ -20,19 +19,17 @@ logger.addHandler(handler)
 
 
 async def addLog(level: str, text: str, send_telegram_message: bool=False) -> None:
-    '''Adds new log to file*, console and telegram chat.
+    '''Adds new log to file, console and telegram chat.
 
     :param level: log level (`info`, 'debug', 'warning', 'error', 'critical').
     :param text: log text.
     :param send_telegram_message: determines whether a log will be sent to telegram chat.
-
-    * - a new log file is created every hour.
     '''
-
+    
     now = datetime.datetime.now()
     path = f"logs/{now.year}/{now.month}/{now.day}/"
     filename = path + f"log-{now.hour}.log"
-    
+
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(filename, 'a') as file:
         separator_string = f"\n\n{'='*50}\n\n"
