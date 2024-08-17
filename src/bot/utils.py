@@ -31,7 +31,7 @@ async def getUsername(bot: telebot.TeleBot, user_id: int, profile_link=False) ->
 
 
 async def greeting():
-    '''Creates a personalized greeting depending on the current server time.'''
+    "Creates a personalized greeting depending on the current server time."
 
     hour = datetime.datetime.now().hour
     morning = [*range(4, 11)]

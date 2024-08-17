@@ -6,6 +6,8 @@ import functools
 
 async def setState(bot: str, user_id: int, state_data: dict) -> None:
     redis = await getRedisConnection()
+    if 'last_state' not in state_data.keys():
+        state['last_state'] = (await getState(bot, user_id))
     state = json.dumps(state_data)
     redis.set(f"bot={bot}&user={user_id}-state", state)
 
@@ -20,8 +22,8 @@ async def delStates(bot: str, user_id: int) -> None:
     redis.delete(f"bot={bot}&user={user_id}-state")
 
 
-def autoSetState(bot: str):
-    '''Sets the function and the values of its arguments as the current state.'''
+def autoSetState(bot: str='main'):
+    "Sets the function and the values of its arguments as the current state."
 
     def container(func):
         @functools.wraps(func)

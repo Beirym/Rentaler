@@ -13,3 +13,8 @@ async def connect():
     )
 
     return conn
+
+
+asyncpg_errors = {
+    'UniqueViolationError' : asyncpg.exceptions.UniqueViolationError,
+}

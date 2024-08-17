@@ -33,7 +33,10 @@ async def addLog(level: str, text: str, send_telegram_message: bool=False) -> No
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(filename, 'a') as file:
         separator_string = f"\n\n{'='*50}\n\n"
-        file.write(f"{now} [{level}] - {text}" + separator_string)
+        try:
+            file.write(f"{now} [{level}] - {text}" + separator_string)
+        except:
+            file.write(f"{now} [{level}] - {text.encode('utf-8')}" + separator_string)
 
     if send_telegram_message:
         disable_notification = True
