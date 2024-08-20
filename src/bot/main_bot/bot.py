@@ -80,14 +80,11 @@ async def start(message: telebot.types.Message=None, user_id: int=None) -> None:
     )
 
 
-# Tools
+# === Tools ===
 
 @exceptions_catcher
 @autoSetState()
-async def toolsMenu(message: telebot.types.Message=None, user_id: int=None) -> None:
-    if user_id is None:
-        user_id = message.from_user.id
-
+async def toolsMenu(user_id: int=None) -> None:
     keyboard = keyboard_obj()
     keyboard.add(button_obj(text='🧴 Клининг', callback_data='start_func-cleaning'))
     keyboard.add(button_obj(text='📝 Текст для заселения', callback_data='start_func-clients_text'))
@@ -107,13 +104,9 @@ async def toolsMenu(message: telebot.types.Message=None, user_id: int=None) -> N
         reply_markup=keyboard,
     )
 
-
 @exceptions_catcher
 @autoSetState()
-async def cleaningMenu(message: telebot.types.Message=None, user_id: int=None) -> None:
-    if user_id is None:
-        user_id = message.from_user.id
-
+async def cleaningMenu(user_id: int=None) -> None:
     keyboard = keyboard_obj()
     keyboard.add(button_obj(text='➕ Запланировать уборку', callback_data='start_func-addCleaning'))
     keyboard.add(button_obj(text='🗂 Архив уборок', callback_data='start_func-cleaningsArchive'))
@@ -136,27 +129,287 @@ async def cleaningMenu(message: telebot.types.Message=None, user_id: int=None) -
         reply_markup=keyboard,
     )
 
-# /. Tools
+# /. === Tools ===
 
 
-# Properties
-
-@exceptions_catcher
-@autoSetState
-async def propertiesMenu(message: telebot.types.Message=None, user_id: int=None) -> None:
-    ...
-
-# /. Properties
-
-
-# Workers
+# === Properties ===
 
 @exceptions_catcher
 @autoSetState()
-async def workersMenu(message: telebot.types.Message=None, user_id: int=None) -> None:
-    if user_id is None:
-        user_id = message.from_user.id
+async def propertiesMenu(user_id: int=None) -> None:
+    keyboard = keyboard_obj()
+    keyboard.add(button_obj(text='➕ Добавить объект', callback_data='start_func-addProperty'))
+    keyboard.add(button_obj(text='🗂 Список объектов', callback_data='start_func-propertiesList'))
+    keyboard.add(button_obj(text='⬅️ Назад', callback_data='start_func-back'))
 
+    conn = await connect()
+    try:
+        properties_query = '''SELECT COUNT(id) FROM properties WHERE "userID" = $1'''
+
+        properties = (await conn.fetchrow(properties_query, user_id))[0]
+    finally:
+        await conn.close()
+
+    bot.send_message(
+        chat_id=user_id,
+        text=dedent(
+            f'''
+            *🏠 Мои объекты* 
+
+            🏘 У Вас *{properties}* объектов.
+            '''
+        ),
+        parse_mode="Markdown",
+        reply_markup=keyboard,
+    )
+
+@exceptions_catcher
+@autoSetState()
+async def addProperty(user_id: int, property_data: dict=None) -> None:
+    keyboard = keyboard_obj()
+    back_button = button_obj(text='⬅️ Назад', callback_data='start_func-back')
+
+    if property_data:
+        address = property_data['address']
+        title = property_data['title']
+        now = datetime.datetime.now
+
+        conn = await connect()
+        try:
+            stmt = '''
+                INSERT INTO properties ("userID", address, title, "addDate")
+                VALUES ($1, $2, $3, $4)
+                RETURNING id
+            '''
+            property_id = (await conn.fetchval(stmt, user_id, address, title, now()))
+        finally:
+            await conn.close()
+
+        keyboard.add(
+            button_obj(
+                text='🏡 Карточка объекта', 
+                callback_data=f'start_func-propertyCard-property_id={property_id}-call_id=True'
+            )
+        )
+        keyboard.add(back_button)
+
+        bot.send_message(
+            chat_id=user_id,
+            text=dedent(
+                f'''
+                *✅ Объект добавлен!*
+
+                🏷 Название: *{title if title else 'не указано'}*
+                🪧  Адрес: *{address}*
+                '''
+            ),
+            parse_mode="Markdown",
+            reply_markup=keyboard,
+        )
+
+    else:
+        keyboard.add(back_button)
+
+        message = bot.send_message(
+            chat_id=user_id,
+            text=dedent(
+                f'''
+                *➕ Добавление объекта*
+
+                🪧 Укажите адрес объекта.
+
+                _При необходимости, Вы также можете дать объекту название, указав его через точку с запятой от адреса. 
+                (Пример: г. Москва, Пресненская наб., 12; Башня Федерация)._
+                '''
+            ),
+            parse_mode="Markdown",
+            reply_markup=keyboard,
+        )
+
+        def nextStepHandler(message):
+            data = message.text.split(';')
+            property_data = {
+                'address': data[0],
+                'title': data[1] if len(data) > 1 else None,
+            }
+            asyncio.run(addProperty(user_id, property_data))
+        bot.register_next_step_handler(message, nextStepHandler)
+
+@exceptions_catcher
+@autoSetState()
+async def propertiesList(user_id: int, page: int=1) -> None:
+    conn = await connect()
+    try:
+        query = '''
+            SELECT id, address, title
+            FROM properties
+            WHERE "userID" = $1
+        '''
+        properties = (await conn.fetch(query, user_id))
+    finally:
+        await conn.close()
+
+    properties_count = len(properties)
+    if properties_count > 0:
+        properties_data = tuple([
+            {
+                'text': f'{p[2][:20] if p[2] else p[1][:20]}', # p[1] == "address", p[2] == "title"
+                'callback_data': f'start_func-propertyCard-property_id={p[0]}-call_id=True'
+            } 
+            for p in properties
+        ])
+        keyboard = (await paginator(array=properties_data, current_page=page))
+    else:
+        keyboard = keyboard_obj()
+    keyboard.add(button_obj(text='⬅️ Назад', callback_data='start_func-back'))
+    
+    bot.send_message(
+        chat_id=user_id,
+        text=dedent(
+            f'''
+            *🗂 Список объектов*
+
+            🏡 У Вас *{len(properties)}* объектов.
+            '''
+        ),
+        parse_mode="Markdown",
+        reply_markup=keyboard,
+    )     
+
+@exceptions_catcher
+@autoSetState()
+async def propertyCard(user_id: int, property_id: int, call_id: int) -> None:
+    conn = await connect()
+    try:
+        query = '''
+            SELECT address, title, "addDate"
+            FROM properties
+            WHERE id = $1 
+                AND "userID" = $2 
+        '''
+        property_data = (await conn.fetchrow(query, property_id, user_id))
+    finally:
+        await conn.close()
+
+    if property_data is None:
+        bot.answer_callback_query(
+            callback_query_id=call_id, 
+            text=dedent(
+            '''
+            🔎 Объект не найден!
+
+            Меню из которого Вы пытались открыть его карточку устарело.
+            '''), 
+            show_alert=True
+        )
+    else:
+        address = property_data[0]
+        title = property_data[1]
+        add_date = property_data[2].date()
+
+        keyboard = keyboard_obj()
+        keyboard.add(
+            button_obj(
+                text='🗑 Удалить объект', 
+                callback_data=f'start_func-removeProperty-property_id={property_id}-call_id=True'
+            )
+        )
+        keyboard.add(button_obj(text='⬅️ Назад', callback_data='start_func-back'))
+
+        bot.send_message(
+            chat_id=user_id,
+            text=dedent(
+                f'''
+                *🏠 {title if title else address}*
+
+                📅 Дата добавления: *{add_date}*
+                '''
+            ),
+            parse_mode="Markdown",
+            reply_markup=keyboard,
+        )
+
+@exceptions_catcher
+async def removeProperty(user_id: int, property_id: int, call_id: int=None, confirmed: bool=False) -> None:
+    conn = await connect()
+    try:
+        query = '''
+            SELECT address
+            FROM properties
+            WHERE id = $1 AND "userID" = $2
+        '''
+        property_data = (await conn.fetchrow(query, property_id, user_id))
+    finally:
+        await conn.close()
+
+    if property_data is None:
+        bot.answer_callback_query(
+            call_id, 
+            dedent(
+            '''
+            🔎 Объект не найден!
+
+            Меню из которого Вы пытались его удалить устарело.
+            '''), 
+            show_alert=True
+        )
+
+    else:
+        address = property_data[0]
+
+        keyboard = keyboard_obj()
+
+        if confirmed:
+            conn = await connect()
+            try:
+                stmt = "DELETE FROM properties WHERE id = $1"
+                await conn.execute(stmt, property_id)
+            finally:
+                await conn.close()
+
+            keyboard.add(button_obj(text='🏠 Главное меню', callback_data='start_func-start'))
+
+            bot.send_message(
+                chat_id=user_id,
+                text=dedent(
+                    f'''
+                    *✅ Объект {address} удалён!*
+                    '''
+                ),
+                parse_mode="Markdown",
+                reply_markup=keyboard,
+            )     
+
+        else:
+            keyboard.row(
+                button_obj(text='❌ Отмена', callback_data='start_func-back'),
+                button_obj(
+                    text='✅ Удалить', 
+                    callback_data=f'start_func-removeProperty-property_id={property_id}&confirmed=True'
+                )
+            )
+
+            bot.send_message(
+                chat_id=user_id,
+                text=dedent(
+                    f'''
+                    *🗑 Вы уверены, что хотите удалить свой объект?*
+
+                    🏠 Объект: *{address}*
+                    '''
+                ),
+                parse_mode="Markdown",
+                reply_markup=keyboard,
+            )
+
+# /. === Properties ===
+
+
+# === Workers ===
+
+@exceptions_catcher
+@autoSetState()
+async def workersMenu(user_id: int=None) -> None:
     keyboard = keyboard_obj()
     keyboard.add(button_obj(text='➕ Добавить сотрудника', callback_data='start_func-addWorker'))
     keyboard.add(button_obj(text='🗂 Список сотрудников', callback_data='start_func-workersList'))
@@ -187,10 +440,7 @@ async def workersMenu(message: telebot.types.Message=None, user_id: int=None) ->
 
 @exceptions_catcher
 @autoSetState()
-async def addWorker(message: telebot.types.Message=None, user_id: int=None, work_id: int=None) -> None:
-    if user_id is None:
-        user_id = message.from_user.id
-
+async def addWorker(user_id: int=None, work_id: int=None) -> None:
     keyboard = keyboard_obj()
     back_button = button_obj(text='⬅️ Назад', callback_data='start_func-back')
 
@@ -222,7 +472,8 @@ async def addWorker(message: telebot.types.Message=None, user_id: int=None, work
 
                 🧑🏼‍🔧 Введите имя человека, которого назначаете своим сотрудником.
 
-                _При необходимости, Вы также можете указать его номер телефона через запятую от имени. (Пример: Павел, +79008007060)._
+                _При необходимости, Вы также можете указать его номер телефона через запятую от имени. 
+                (Пример: Павел, +79008007060)._
                 '''
             ),
             parse_mode="Markdown",
@@ -310,18 +561,27 @@ async def createWorkerAddLink(user_id: int, worker_data_key: str) -> None:
         stmt = '''
             INSERT INTO "userWorkers" ("userID", "workID", "workerName", "workerNumber", "addDate", "addID")
             VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING id
         '''
-        await conn.execute(
-            stmt, 
-            user_id, 
-            worker_data['work_id'], 
-            worker_data['name'],
-            worker_data['number'],
-            datetime.datetime.now(),
-            worker_add_id
-        )
+        worker_id = (await conn.fetchval(
+                        stmt, 
+                        user_id, 
+                        worker_data['work_id'], 
+                        worker_data['name'],
+                        worker_data['number'],
+                        datetime.datetime.now(),
+                        worker_add_id
+                    ))
     finally:
         await conn.close()
+
+    keyboard = keyboard_obj()
+    keyboard.add(
+        button_obj(
+            text='🧑🏼‍🔧 Карточка сотрудника', 
+            callback_data=f'start_func-workerCard-worker_id={worker_id}-call_id=True'
+        )
+    )
 
     bot.send_message(
         chat_id=user_id,
@@ -337,6 +597,7 @@ async def createWorkerAddLink(user_id: int, worker_data_key: str) -> None:
             '''
         ),
         parse_mode="Markdown",
+        reply_markup=keyboard,
     )     
 
 @exceptions_catcher
@@ -419,8 +680,8 @@ async def workerCard(user_id: int, worker_id: int, call_id: int) -> None:
 
     if worker is None:
         bot.answer_callback_query(
-            call_id, 
-            dedent(
+            callback_query_id=call_id, 
+            text=dedent(
             '''
             🔎 Сотрудник не найден!
 
@@ -433,7 +694,7 @@ async def workerCard(user_id: int, worker_id: int, call_id: int) -> None:
         work_id = worker[1]
         name = worker[2]
         phone = worker[3]
-        add_date = worker[4]
+        add_date = worker[4].date()
         is_active = worker[5]
 
         is_active_emoji = {
@@ -445,7 +706,7 @@ async def workerCard(user_id: int, worker_id: int, call_id: int) -> None:
         keyboard.add(
             button_obj(
                 text='🗑 Удалить сотрудника', 
-                callback_data=f'start_func-removeUserWorker-worker_id={worker_id}'
+                callback_data=f'start_func-removeUserWorker-worker_id={worker_id}-call_id=True'
             )
         )
         keyboard.add(button_obj(text='⬅️ Назад', callback_data='start_func-back'))
@@ -466,11 +727,11 @@ async def workerCard(user_id: int, worker_id: int, call_id: int) -> None:
         )     
         
 @exceptions_catcher
-async def removeUserWorker(user_id: int, worker_id: int, confirmed: bool=False) -> None:
+async def removeUserWorker(user_id: int, worker_id: int, call_id: int=None, confirmed: bool=False) -> None:
     conn = await connect()
     try:
         query = '''
-            SELECT id, "workID", "workerName"
+            SELECT "workID", "workerName"
             FROM "userWorkers"
             WHERE id = $1 AND "userID" = $2
         '''
@@ -485,14 +746,14 @@ async def removeUserWorker(user_id: int, worker_id: int, confirmed: bool=False) 
             '''
             🔎 Сотрудник не найден!
 
-            Меню из которого Вы пытались открыть его профиль устарело.
+            Меню из которого Вы пытались его удалить устарело.
             '''), 
             show_alert=True
         )
 
     else:
-        work_id = worker[1]
-        name = worker[2]
+        work_id = worker[0]
+        name = worker[1]
 
         keyboard = keyboard_obj()
 
@@ -501,9 +762,9 @@ async def removeUserWorker(user_id: int, worker_id: int, confirmed: bool=False) 
             try:
                 stmt = '''
                     DELETE FROM "userWorkers"
-                    WHERE id = $1 AND "userID" = $2
+                    WHERE id = $1
                 '''
-                await conn.execute(stmt, worker_id, user_id)
+                await conn.execute(stmt, worker_id)
             finally:
                 await conn.close()
 
@@ -542,7 +803,7 @@ async def removeUserWorker(user_id: int, worker_id: int, confirmed: bool=False) 
                 reply_markup=keyboard,
             )     
 
-# /. Workers
+# /. === Workers ===
 
 
 # Getter of any callback queries in the chat
@@ -572,6 +833,9 @@ async def statesRunner(call: telebot.types.CallbackQuery):
 
         elif func == 'back': 
             "Runs previous user state."
+
+            # Clear available next step handlers
+            bot.clear_step_handler_by_chat_id(chat_id=user_id)
 
             current_state = (await getState(bot='main', user_id=user_id))
             if current_state:
