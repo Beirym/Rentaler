@@ -1,5 +1,3 @@
-from .exceptions import exceptions_catcher
-
 import telebot
 import datetime
 

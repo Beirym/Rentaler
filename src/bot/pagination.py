@@ -3,7 +3,12 @@ import inspect
 from telebot import types
 
 
-async def paginator(array: tuple[dict], per_page: int=5, current_page: int=1) -> types.InlineKeyboardMarkup:
+async def paginator(
+    array: tuple[dict], 
+    per_page: int=5, 
+    current_page: int=1,
+    **kwargs
+) -> types.InlineKeyboardMarkup:
     '''Creates a keyboard with objects from array and pagination buttons.
     
     :param array: tuple of objects for pagination.
@@ -25,12 +30,23 @@ async def paginator(array: tuple[dict], per_page: int=5, current_page: int=1) ->
     stack = inspect.stack()
     caller_func = stack[1].function 
 
+    if kwargs:
+        kwargs_parts = []
+        for k, v in kwargs.items():
+            if isinstance(v, int): form = f'{k}={v}'
+            else: form = f'{k}="{v}"'
+            kwargs_parts.append(form)
+        kwargs = '&'.join(kwargs_parts)
+    else:
+        kwargs = ''
+
+
     manage_buttons = {
-        'previous': button(text='⬅️', callback_data=f'start_func-{caller_func}-page={current_page-1}'),
+        'previous': button(text='⬅️', callback_data=f'start_func-{caller_func}-page={current_page-1}&{kwargs}'),
         'current': button(text=f'{current_page} / {pages_count}', callback_data='#'),
-        'next': button(text='➡️', callback_data=f'start_func-{caller_func}-page={current_page+1}'),
-        'first': button(text='⏪', callback_data=f'start_func-{caller_func}-page=1'),
-        'last': button(text='⏩', callback_data=f'start_func-{caller_func}-page={pages_count}'),
+        'next': button(text='➡️', callback_data=f'start_func-{caller_func}-page={current_page+1}&{kwargs}'),
+        'first': button(text='⏪', callback_data=f'start_func-{caller_func}-page=1&{kwargs}'),
+        'last': button(text='⏩', callback_data=f'start_func-{caller_func}-page={pages_count}&{kwargs}'),
         'empty': button(text=' ', callback_data=f'#'),
     }
     if pages_count > 1:
