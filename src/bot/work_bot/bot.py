@@ -411,6 +411,13 @@ async def acceptCleaning(user_id: int, work_id: int, call_id: int, confirmed: bo
                 WHERE id = $3
             '''
             await conn.execute(stmt, user_id, now(), work_id)
+
+            query = '''
+                SELECT "workerName", "workerNumber"
+                FROM "userWorkers"
+                WHERE "workerID" = $1
+            '''
+            worker_data = (await conn.fetchrow(query, user_id))
         finally:
             await conn.close()
 
@@ -442,6 +449,13 @@ async def acceptCleaning(user_id: int, work_id: int, call_id: int, confirmed: bo
         )
     
         # Message for landlord
+        worker_name = worker_data['workerName']
+        worker_number = worker_data['workerNumber']
+        if worker_number:
+            worker_name_and_number = f'*{worker_name}* (`{worker_number}`)'
+        else:
+            worker_name_and_number = worker_name
+
         await telegram_api_request(
             request_method='POST',
             api_method='sendMessage',
@@ -453,6 +467,7 @@ async def acceptCleaning(user_id: int, work_id: int, call_id: int, confirmed: bo
 
                     🏠 Место проведения: *{cleaning_data['address']}*
                     📅 Дата и время проведения: *{cleaning_data['date']} ({cleaning_data['timeRange']})*
+                    🧑🏼‍🔧 Отвественный сотрудник: {worker_name_and_number}
                     '''),
                 'parse_mode': 'Markdown',
                 'reply_markup': json.dumps({

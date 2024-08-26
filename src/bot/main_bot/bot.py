@@ -722,9 +722,13 @@ async def removeCleaning(user_id: int, work_id: int, call_id: int=None, confirme
     conn = await connect()
     try:
         query = '''
-            SELECT id
-            FROM "userWorks"
-            WHERE id = $1 AND "userID" = $2
+            SELECT 
+                w.id, w."workerID", w.date, w."timeRange", p.address
+            FROM "userWorks" w
+            JOIN properties p
+                ON p.id = w."propertyID"
+            WHERE 
+                w.id = $1 AND w."userID" = $2
         '''
         cleaning_data = (await conn.fetchrow(query, work_id, user_id))
     finally:
@@ -743,6 +747,7 @@ async def removeCleaning(user_id: int, work_id: int, call_id: int=None, confirme
         )
 
     else:
+        cleaning_data = dict(cleaning_data)
         keyboard = keyboard_obj()
 
         if confirmed:
@@ -761,6 +766,29 @@ async def removeCleaning(user_id: int, work_id: int, call_id: int=None, confirme
                 parse_mode="Markdown",
                 reply_markup=keyboard,
             )     
+
+            if cleaning_data['workerID']:
+                worker_id = cleaning_data['workerID']
+                date = cleaning_data['date']
+                time_range = cleaning_data['timeRange']
+                property_address = cleaning_data['address']
+
+                await telegram_api_request(
+                    request_method='POST',
+                    api_method='sendMessage',
+                    parameters={
+                        'chat_id': worker_id,
+                        'text': dedent(
+                            f'''
+                            *❌ Клининг отменён!*
+
+                            Проведеление *{date} ({time_range})* на адресе: *{property_address}* отменено!
+                            '''
+                        ),
+                        'parse_mode': 'Markdown',
+                    },
+                    bot='work'
+                )
 
         else:
             keyboard.row(
@@ -1310,7 +1338,7 @@ async def workersList(user_id: int, page: int=1) -> None:
         }
         workers_data = tuple([
             {
-                'text': f'{is_active_emoji[w[2]]} {w[1][:10]} ({getWorkTitle(w[2], add_emoji=True)})', 
+                'text': f'{is_active_emoji[w[3]]} {w[1][:10]} ({getWorkTitle(w[2], add_emoji=True)})', 
                 'callback_data': f'start_func-workerCard-worker_id={w[0]}-call_id=True'
             } 
             for w in workers
@@ -1341,7 +1369,7 @@ async def workerCard(user_id: int, worker_id: int, call_id: int) -> None:
         query = '''
             SELECT id, "workID", "workerName", "workerNumber", "addDate", "isActive"
             FROM "userWorkers"
-            WHERE "workerID" = $1 AND "userID" = $2
+            WHERE (id = $1 OR "workerID" = $1) AND "userID" = $2
         '''
         worker = (await conn.fetchrow(query, worker_id, user_id))
     finally:
